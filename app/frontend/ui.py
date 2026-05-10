@@ -3,28 +3,78 @@ import requests
 
 API_URL = "http://127.0.0.1:8000/analyze"
 
-st.title("🎨 AI Design Critique Assistant")
+# Page config
+st.set_page_config(page_title="AI Design Critique", layout="wide")
 
-uploaded_file = st.file_uploader("Upload UI Screenshot", type=["png", "jpg", "jpeg"])
+
+# ✅ DEFINE FUNCTION FIRST (IMPORTANT FIX)
+def render_card(item):
+    severity = item.get("severity", "Info")
+
+    # Color based on severity
+    if severity == "Critical":
+        color = "#ff4b4b"
+    elif severity == "Recommended":
+        color = "#ffa500"
+    else:
+        color = "#4caf50"
+
+    st.markdown(
+        f"""
+        <div style="
+            border-left: 5px solid {color};
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #111;
+            border-radius: 10px;
+        ">
+            <h4>{item.get('category', 'N/A')}</h4>
+            <p><b>Issue:</b> {item.get('issue', 'N/A')}</p>
+            <p><b>Reason:</b> {item.get('reason', 'N/A')}</p>
+            <p><b>Suggestion:</b> {item.get('suggestion', 'N/A')}</p>
+            <p><b>Severity:</b> {severity}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# Title
+st.markdown("# 🎨 AI Design Critique Assistant")
+st.markdown("Upload your UI and get expert-level feedback 🚀")
+
+st.divider()
+
+# Upload section
+uploaded_file = st.file_uploader("📤 Upload UI Screenshot", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    st.image(uploaded_file, caption="Uploaded UI", use_column_width=True)
+    col1, col2 = st.columns([1, 1])
 
-    if st.button("Analyze Design"):
-        with st.spinner("Analyzing..."):
+    with col1:
+        st.image(uploaded_file, caption="Uploaded UI", width="stretch")
 
-            files = {"file": uploaded_file.getvalue()}
-            response = requests.post(API_URL, files=files)
+    with col2:
+        if st.button("🔍 Analyze Design"):
 
-            if response.status_code == 200:
-                result = response.json()
+            with st.spinner("Analyzing your design..."):
 
-                st.subheader("📊 Analysis Result")
+                files = {"file": uploaded_file.getvalue()}
+                response = requests.post(API_URL, files=files)
 
-                for item in result["analysis"]:
-                    st.markdown(f"### {item['category']}")
-                    st.write(f"**Issue:** {item['issue']}")
-                    st.write(f"**Reason:** {item['reason']}")
-                    st.write(f"**Suggestion:** {item['suggestion']}")
-                    st.write(f"**Severity:** {item['severity']}")
-                    st.divider()
+                if response.status_code == 200:
+                    result = response.json()
+
+                    st.subheader("📊 Analysis Result")
+
+                    if "analysis" in result and isinstance(result["analysis"], list):
+
+                        for item in result["analysis"]:
+                            render_card(item)
+
+                    else:
+                        st.error("⚠️ Analysis failed")
+                        st.json(result)
+
+                else:
+                    st.error("API Error")
