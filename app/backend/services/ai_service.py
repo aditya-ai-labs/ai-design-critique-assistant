@@ -1,10 +1,9 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from config.settings import GEMINI_API_KEY
 import json
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-model = genai.GenerativeModel("gemini-2.5-flash")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 async def analyze_ui(file):
@@ -27,13 +26,19 @@ Format:
   }
 ]
 
-Do not add text outside JSON.
+Do NOT add anything outside JSON.
 """
 
-        response = model.generate_content([
-            prompt,
-            {"mime_type": "image/jpeg", "data": image_bytes}
-        ])
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                prompt,
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type="image/jpeg"
+                )
+            ]
+        )
 
         text_output = response.text
 
@@ -41,7 +46,6 @@ Do not add text outside JSON.
 
     except Exception as e:
         return fallback_response(str(e))
-    
 
 
 def parse_response(text):
