@@ -28,21 +28,22 @@ async def analyze(file: UploadFile = File(...)):
 
 
 # ---------------- CHAT ----------------
-@router.post("/chat", response_model=ChatResponse)
-async def chat(data: ChatRequest):
+@router.post("/chat")
+async def chat(data: dict):
     try:
         question = data.get("question")
-        analysis = data.get("analysis")
+        analysis = data.get("analysis") or []
 
         if not question:
-            raise HTTPException(status_code=400, detail="Question is required")
+            return {"reply": "Question missing"}
 
         reply = await chat_with_context(question, analysis)
 
         return {"reply": reply}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print("CHAT ERROR:", e)
+        return {"reply": "Something went wrong in chat"}
 
 
 # ---------------- IMPROVE UI ----------------

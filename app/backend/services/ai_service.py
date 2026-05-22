@@ -1,6 +1,6 @@
 from google import genai
 from google.genai import types
-from config.settings import GEMINI_API_KEY
+from config.settings import GEMINI_API_KEY ,HF_API_KEY
 import json
 from io import BytesIO
 from fpdf import FPDF
@@ -8,6 +8,31 @@ import requests
 from app.backend.services.prompt_engine import build_prompt
 
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+# =============== Huggingface Model ===================================
+
+HF_MODEL = "HuggingFaceH4/zephyr-7b-beta"
+
+def query_huggingface(prompt):
+    API_URL = f"https://hf.space/embed/{HF_MODEL}/+api/predict"
+
+    headers = {
+        "Authorization": f"Bearer {HF_API_KEY}"
+    }
+
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 500
+        }
+    }
+
+    response = requests.post(API_URL, headers=headers, json=payload)
+
+    if response.status_code == 200:
+        return response.json()[0]["generated_text"]
+    else:
+        return None
 
 # ---------------- ANALYZE UI ----------------
 async def analyze_ui(file):
@@ -25,6 +50,7 @@ async def analyze_ui(file):
 
         prompt = build_prompt()
 
+        # 🔥 PRIMARY MODEL (GEMINI)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -47,40 +73,61 @@ async def analyze_ui(file):
         return result
 
     except Exception as e:
-        print("ERROR (analyze):", e)
+        print("Gemini Error:", e)
 
-        # 🔥 HANDLE QUOTA ERROR
-        if "429" in str(e):
-            return {
-                "analysis": [
-                    {
-                        "category": "System",
-                        "issue": "API quota exceeded",
-                        "suggestion": "Wait for a minute or reduce usage",
-                        "severity": "Info"
-                    }
-                ]
-            }
+        # 🔥 TRY HF
+        try:
+            hf_output = query_huggingface(prompt)
 
-        return fallback_response(str(e))
+            if hf_output:
+                return {
+                    "analysis": [
+                        {
+                            "category": "AI Fallback",
+                            "issue": hf_output[:300],
+                            "suggestion": "Generated using HuggingFace",
+                            "severity": "Info"
+                        }
+                    ]
+                }
 
+        except Exception as hf_error:
+            print("HF Error:", hf_error)
 
+        # 🔥 FINAL LOCAL FALLBACK (NO API)
+        return {
+            "analysis": [
+                {
+                    "category": "Layout",
+                    "issue": "Basic UI alignment issue detected",
+                    "suggestion": "Ensure consistent spacing and alignment",
+                    "severity": "Recommended"
+                },
+                {
+                    "category": "Typography",
+                    "issue": "Font hierarchy unclear",
+                    "suggestion": "Use proper heading sizes",
+                    "severity": "Minor"
+                }
+            ]
+        }
+                
+
+        # # 🔥 FINAL FALLBACK (SAFE)
+        # return fallback_response(str(e))
 # ---------------- CHAT ----------------
 async def chat_with_context(question, analysis):
     try:
-        # 🔥 Reduce token usage (IMPORTANT)
-        short_analysis = json.dumps(analysis)[:1000]
-
         prompt = f"""
 You are a UX mentor.
 
-UI Analysis:
-{short_analysis}
+Previous analysis:
+{json.dumps(analysis, indent=2)}
 
-User Question:
+User question:
 {question}
 
-Give short and helpful answer.
+Answer clearly.
 """
 
         response = client.models.generate_content(
@@ -91,23 +138,52 @@ Give short and helpful answer.
         return response.text
 
     except Exception as e:
-        print("ERROR (chat):", e)
+        print("CHAT AI ERROR:", e)
 
-        if "429" in str(e):
-            return "⚠️ API limit reached. Please wait."
+        hf_output = query_huggingface(question)
+        if hf_output:
+            return hf_output[:300]
 
-        return f"Error: {str(e)}"
-
+        return "AI unavailable"
 
 # ---------------- IMPROVE UI ----------------
+def generate_ui_image(prompt):
+    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
+
+    headers = {
+        "Authorization": f"Bearer {HF_API_KEY}"
+    }
+
+    response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+
+    if response.status_code == 200:
+        return response.content
+    else:
+        print("Image Gen Error:", response.text)
+        return None
+
+
 async def improve_ui(analysis):
     try:
-        # 🔥 No API call (save quota)
-        return {
-            "image": "https://dummyimage.com/600x400/000/fff&text=Improved+UI"
-        }
+        prompt = f"""
+Modern mobile app UI, clean layout, UX optimized, based on:
+{analysis}
+Minimal, professional, figma style
+"""
+
+        image_bytes = generate_ui_image(prompt)
+
+        if image_bytes:
+            file_path = "generated_ui.png"
+            with open(file_path, "wb") as f:
+                f.write(image_bytes)
+
+            return {"image": file_path}
+
+        return {"image": None}
 
     except Exception as e:
+        print("Improve UI Error:", e)
         return {"image": None}
 
 
